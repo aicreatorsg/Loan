@@ -108,13 +108,15 @@ export default function MemberList() {
                 <Table>
                     <TableHead>
                         <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Member No.</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Loan Amount</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Interest</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Installment</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Balance</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Action</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>सदस्य क्र.</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>नाव</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>प्रारंभिक ठेव</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>मासिक बचत</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>कर्ज रक्कम</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>व्याज</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>हप्ता</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>बाकी रक्कम</TableCell>
+                            <TableCell sx={{ fontWeight: 'bold' }}>कृती</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -129,8 +131,10 @@ export default function MemberList() {
                             >
                                 <TableCell>{member.memberNumber}</TableCell>
                                 <TableCell>{member.name}</TableCell>
+                                <TableCell>{formatCurrency(member.initialDeposit || 0)}</TableCell>
+                                <TableCell>{formatCurrency(member.monthlySaving || 0)}</TableCell>
                                 <TableCell align="right">{formatCurrency(member.loanAmount)}</TableCell>
-                                <TableCell align="right">{formatCurrency(member.interest)}</TableCell>
+                                <TableCell align="right">{member.interest}%</TableCell>
                                 <TableCell align="right">{formatCurrency(member.installment)}</TableCell>
                                 <TableCell align="right">{formatCurrency(member.balance)}</TableCell>
                                 <TableCell>
@@ -234,7 +238,7 @@ export default function MemberList() {
                                                     Interest
                                                 </Typography>
                                                 <Typography variant="body1" gutterBottom>
-                                                    {formatCurrency(selectedMember.interest)}
+                                                    {selectedMember.interest}%
                                                 </Typography>
                                             </Grid>
                                             <Grid item xs={6} md={3}>

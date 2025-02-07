@@ -7,7 +7,8 @@ import {
     getDoc,
     query,
     where,
-    updateDoc
+    updateDoc,
+    serverTimestamp
 } from 'firebase/firestore';
 
 const MEMBERS_COLLECTION = 'members';
@@ -18,7 +19,7 @@ export async function getAllMembers() {
         const snapshot = await getDocs(membersRef);
         return snapshot.docs.map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ...formatMemberData(doc.data())
         }));
     } catch (error) {
         console.error("Error fetching members:", error);
@@ -37,10 +38,58 @@ export async function getMemberById(memberId) {
         
         return {
             id: memberDoc.id,
-            ...memberDoc.data()
+            ...formatMemberData(memberDoc.data())
         };
     } catch (error) {
         console.error("Error fetching member:", error);
+        throw error;
+    }
+}
+
+export async function updateMember(memberId, updatedData) {
+    try {
+        // Validate the member exists
+        const memberRef = doc(db, MEMBERS_COLLECTION, memberId);
+        const memberDoc = await getDoc(memberRef);
+        
+        if (!memberDoc.exists()) {
+            throw new Error('Member not found');
+        }
+
+        // Format and validate the data
+        const validatedData = {
+            name: String(updatedData.name || '').trim(),
+            memberNumber: String(updatedData.memberNumber || '').trim(),
+            loanAmount: Number(updatedData.loanAmount) || 0,
+            interest: Number(updatedData.interest) || 0,
+            installment: Number(updatedData.installment) || 0,
+            balance: Number(updatedData.balance) || 0,
+            updatedAt: serverTimestamp()
+        };
+
+        // Check if member number is being changed
+        if (validatedData.memberNumber !== memberDoc.data().memberNumber) {
+            // Check for duplicate member number
+            const membersRef = collection(db, MEMBERS_COLLECTION);
+            const q = query(membersRef, where("memberNumber", "==", validatedData.memberNumber));
+            const snapshot = await getDocs(q);
+            
+            if (!snapshot.empty) {
+                throw new Error(`Member number ${validatedData.memberNumber} already exists`);
+            }
+        }
+
+        // Update the member
+        await updateDoc(memberRef, validatedData);
+
+        // Return the updated data
+        return {
+            id: memberId,
+            ...validatedData,
+            updatedAt: new Date().toISOString() // Convert server timestamp to ISO string for client
+        };
+    } catch (error) {
+        console.error("Error updating member:", error);
         throw error;
     }
 }
@@ -61,69 +110,67 @@ export async function getMemberLoans(memberId) {
     }
 }
 
-export const updateMember = async (memberId, updatedData) => {
-    try {
-        const memberRef = doc(db, 'members', memberId);
-        await updateDoc(memberRef, {
-            ...updatedData,
-            updatedAt: new Date()
-        });
-        return true;
-    } catch (error) {
-        console.error('Error updating member:', error);
-        throw error;
-    }
-};
+// Helper function to format member data
+function formatMemberData(data) {
+    return {
+        name: String(data.name || ''),
+        memberNumber: String(data.memberNumber || ''),
+        loanAmount: Number(data.loanAmount) || 0,
+        interest: Number(data.interest) || 0,
+        installment: Number(data.installment) || 0,
+        balance: Number(data.balance) || 0,
+        updatedAt: data.updatedAt ? new Date(data.updatedAt.toDate()).toISOString() : null
+    };
+}
 
-export const recordTransaction = async (memberId, amount, type) => {
+export async function recordTransaction(memberId, amount, type) {
     try {
-        const memberRef = doc(db, 'members', memberId);
-        const transactionRef = collection(db, 'transactions');
-        
-        // Get current member data
-        const memberDoc = await getDoc(memberRef);
-        const memberData = memberDoc.data();
-        
-        // Calculate new balance
-        const newBalance = memberData.balance - amount;
-        
+        const transactionData = {
+            memberId,
+            amount: Number(amount),
+            type,
+            timestamp: serverTimestamp()
+        };
+
+        const transactionsRef = collection(db, 'transactions');
+        await addDoc(transactionsRef, transactionData);
+
         // Update member balance
+        const memberRef = doc(db, MEMBERS_COLLECTION, memberId);
+        const memberDoc = await getDoc(memberRef);
+        
+        if (!memberDoc.exists()) {
+            throw new Error('Member not found');
+        }
+
+        const currentBalance = Number(memberDoc.data().balance) || 0;
+        const newBalance = type === 'credit' ? currentBalance + amount : currentBalance - amount;
+
         await updateDoc(memberRef, {
             balance: newBalance,
-            updatedAt: new Date()
+            updatedAt: serverTimestamp()
         });
-        
-        // Record transaction
-        await addDoc(transactionRef, {
-            memberId,
-            memberName: memberData.name,
-            memberNumber: memberData.memberNumber,
-            amount,
-            type,
-            date: new Date(),
-            previousBalance: memberData.balance,
-            newBalance
-        });
-        
+
         return true;
     } catch (error) {
         console.error('Error recording transaction:', error);
         throw error;
     }
-};
+}
 
-export const getTransactionsByMemberId = async (memberId) => {
+export async function getTransactionsByMemberId(memberId) {
     try {
         const transactionsRef = collection(db, 'transactions');
-        const q = query(transactionsRef, where('memberId', '==', memberId));
+        const q = query(transactionsRef, where("memberId", "==", memberId));
         const snapshot = await getDocs(q);
         
         return snapshot.docs.map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ...doc.data(),
+            timestamp: doc.data().timestamp ? new Date(doc.data().timestamp.toDate()).toISOString() : null
         }));
     } catch (error) {
-        console.error('Error getting transactions:', error);
+        console.error("Error fetching transactions:", error);
         throw error;
     }
-};
+}

@@ -19,14 +19,23 @@ import {
     IconButton,
     Grid,
     Card,
-    CardContent
+    CardContent,
+    CircularProgress
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
-import { query, collection, onSnapshot } from 'firebase/firestore';
+import { 
+    doc, 
+    updateDoc, 
+    serverTimestamp, 
+    query, 
+    collection, 
+    onSnapshot,
+    getDocs,
+    where 
+} from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { updateMember } from '../services/memberService';
 
 const AdminPanel = () => {
     const [members, setMembers] = useState([]);
@@ -35,6 +44,7 @@ const AdminPanel = () => {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [selectedMember, setSelectedMember] = useState(null);
     const [editedData, setEditedData] = useState(null);
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         const q = query(collection(db, 'members'));
@@ -42,23 +52,36 @@ const AdminPanel = () => {
             try {
                 const membersData = [];
                 querySnapshot.forEach((doc) => {
-                    membersData.push({ id: doc.id, ...doc.data() });
+                    const data = doc.data();
+                    membersData.push({
+                        id: doc.id,
+                        memberNumber: String(data.memberNumber || '').trim(),
+                        name: String(data.name || '').trim(),
+                        loanAmount: Number(data.loanAmount) || 0,
+                        interest: Number(data.interest) || 0,
+                        installment: Number(data.installment) || 0,
+                        balance: Number(data.balance) || 0,
+                        updatedAt: data.updatedAt ? new Date(data.updatedAt.toDate()).toISOString() : null
+                    });
+                });
+
+                // Create a map to store the latest entry for each member number
+                const memberMap = new Map();
+                membersData.forEach(member => {
+                    const existingMember = memberMap.get(member.memberNumber);
+                    if (!existingMember || (member.updatedAt && (!existingMember.updatedAt || new Date(member.updatedAt) > new Date(existingMember.updatedAt)))) {
+                        memberMap.set(member.memberNumber, member);
+                    }
+                });
+
+                // Convert map back to array and sort by member number
+                const uniqueMembers = Array.from(memberMap.values());
+                const sortedData = uniqueMembers.sort((a, b) => {
+                    const numA = parseInt(a.memberNumber);
+                    const numB = parseInt(b.memberNumber);
+                    return numA - numB;
                 });
                 
-                // Remove duplicates by memberNumber and keep only the latest entry
-                const uniqueMembers = membersData.reduce((acc, current) => {
-                    const x = acc.find(item => item.memberNumber === current.memberNumber);
-                    if (!x) {
-                        return acc.concat([current]);
-                    } else {
-                        // If this is a newer entry, replace the old one
-                        const index = acc.indexOf(x);
-                        acc[index] = current;
-                        return acc;
-                    }
-                }, []);
-
-                const sortedData = uniqueMembers.sort((a, b) => Number(a.memberNumber) - Number(b.memberNumber));
                 setMembers(sortedData);
                 setError(null);
             } catch (err) {
@@ -74,104 +97,141 @@ const AdminPanel = () => {
 
     const handleEditClick = (member) => {
         setSelectedMember(member);
-        setEditedData({ ...member });
+        setEditedData({
+            ...member,
+            memberNumber: String(member.memberNumber || '').trim(),
+            name: String(member.name || '').trim(),
+            loanAmount: Number(member.loanAmount) || 0,
+            interest: Number(member.interest) || 0,
+            installment: Number(member.installment) || 0,
+            balance: Number(member.balance) || 0
+        });
         setEditDialogOpen(true);
     };
 
     const handleInputChange = (field, value) => {
         setEditedData(prev => ({
             ...prev,
-            [field]: field === 'memberNumber' ? value : Number(value) || 0
+            [field]: ['loanAmount', 'interest', 'installment', 'balance'].includes(field)
+                ? Number(value) || 0
+                : String(value)
         }));
     };
 
     const handleSave = async () => {
         try {
-            await updateMember(selectedMember.id, editedData);
-            setMembers(prev => 
-                prev.map(member => 
-                    member.id === selectedMember.id ? { ...member, ...editedData } : member
-                )
-            );
+            setError(null);
+            setSaving(true);
+
+            // Validate required fields
+            if (!String(editedData.name || '').trim()) {
+                setError('Name is required');
+                setSaving(false);
+                return;
+            }
+
+            if (!String(editedData.memberNumber || '').trim()) {
+                setError('Member Number is required');
+                setSaving(false);
+                return;
+            }
+
+            // Validate numeric fields
+            const financialFields = ['loanAmount', 'interest', 'installment', 'balance'];
+            for (const field of financialFields) {
+                const value = Number(editedData[field]);
+                if (isNaN(value) || value < 0) {
+                    setError(`Invalid value for ${field}. Must be a non-negative number.`);
+                    setSaving(false);
+                    return;
+                }
+            }
+
+            // Check if member number is being changed
+            if (editedData.memberNumber !== selectedMember.memberNumber) {
+                // Check for existing member with the new number
+                const membersRef = collection(db, 'members');
+                const q = query(membersRef, 
+                    where("memberNumber", "==", String(editedData.memberNumber).trim()),
+                    where("id", "!=", selectedMember.id)
+                );
+                const snapshot = await getDocs(q);
+                
+                if (!snapshot.empty) {
+                    setError('This member number is already assigned to another member');
+                    setSaving(false);
+                    return;
+                }
+            }
+
+            // Update the existing document
+            const memberRef = doc(db, 'members', selectedMember.id);
+            const updatedData = {
+                name: String(editedData.name).trim(),
+                memberNumber: String(editedData.memberNumber).trim(),
+                loanAmount: Number(editedData.loanAmount),
+                interest: Number(editedData.interest),
+                installment: Number(editedData.installment),
+                balance: Number(editedData.balance),
+                updatedAt: serverTimestamp()
+            };
+
+            await updateDoc(memberRef, updatedData);
             setEditDialogOpen(false);
             setError(null);
         } catch (err) {
-            setError('Failed to update member. Please try again.');
             console.error('Error updating member:', err);
+            setError('Failed to update member. Please try again.');
+        } finally {
+            setSaving(false);
         }
-    };
-
-    const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR'
-        }).format(amount);
     };
 
     if (loading) {
         return (
-            <Paper elevation={3} sx={{ p: 4, m: 4 }}>
-                <Typography>Loading...</Typography>
+            <Paper elevation={3} sx={{ p: 4, m: 4, display: 'flex', justifyContent: 'center' }}>
+                <CircularProgress />
             </Paper>
         );
     }
 
     return (
-        <Paper elevation={3} sx={{ p: 4, m: 4 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Typography variant="h5" gutterBottom>
-                    Member Management Dashboard
-                </Typography>
-            </Box>
-
+        <Box sx={{ width: '100%', mb: 2 }}>
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }}>
                     {error}
                 </Alert>
             )}
-
-            <TableContainer sx={{ 
-                boxShadow: 3,
-                borderRadius: 2,
-                overflow: 'hidden'
-            }}>
-                <Table>
+            
+            <TableContainer component={Paper}>
+                <Table sx={{ minWidth: 650 }} aria-label="member table">
                     <TableHead>
-                        <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Member No.</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Loan Amount</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Interest</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Installment</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Balance</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                        <TableRow>
+                            <TableCell>Sr. No.</TableCell>
+                            <TableCell>Member No.</TableCell>
+                            <TableCell>Name</TableCell>
+                            <TableCell align="right">Loan Amount</TableCell>
+                            <TableCell align="right">Interest</TableCell>
+                            <TableCell align="right">Installment</TableCell>
+                            <TableCell align="right">Balance</TableCell>
+                            <TableCell align="center">Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {members.map((member) => (
-                            <TableRow 
-                                key={member.id}
-                                sx={{ 
-                                    '&:nth-of-type(odd)': { backgroundColor: '#fafafa' },
-                                    '&:hover': { backgroundColor: '#f0f7ff' },
-                                    transition: 'background-color 0.2s'
-                                }}
-                            >
-                                <TableCell>{member.memberNumber}</TableCell>
+                        {members.map((member, index) => (
+                            <TableRow key={member.id}>
+                                <TableCell>{index + 1}</TableCell>
+                                <TableCell>{parseInt(member.memberNumber)}</TableCell>
                                 <TableCell>{member.name}</TableCell>
-                                <TableCell align="right">{formatCurrency(member.loanAmount)}</TableCell>
-                                <TableCell align="right">{formatCurrency(member.interest)}</TableCell>
-                                <TableCell align="right">{formatCurrency(member.installment)}</TableCell>
-                                <TableCell align="right">{formatCurrency(member.balance)}</TableCell>
-                                <TableCell>
-                                    <IconButton
-                                        color="primary"
+                                <TableCell align="right">₹{member.loanAmount.toLocaleString('en-IN')}</TableCell>
+                                <TableCell align="right">₹{member.interest.toLocaleString('en-IN')}</TableCell>
+                                <TableCell align="right">₹{member.installment.toLocaleString('en-IN')}</TableCell>
+                                <TableCell align="right">₹{member.balance.toLocaleString('en-IN')}</TableCell>
+                                <TableCell align="center">
+                                    <IconButton 
                                         onClick={() => handleEditClick(member)}
+                                        color="primary"
                                         size="small"
-                                        sx={{ 
-                                            boxShadow: 1,
-                                            '&:hover': { boxShadow: 2 }
-                                        }}
                                     >
                                         <EditIcon />
                                     </IconButton>
@@ -184,7 +244,7 @@ const AdminPanel = () => {
 
             <Dialog 
                 open={editDialogOpen} 
-                onClose={() => setEditDialogOpen(false)}
+                onClose={() => !saving && setEditDialogOpen(false)}
                 maxWidth="md"
                 fullWidth
                 PaperProps={{
@@ -203,19 +263,26 @@ const AdminPanel = () => {
                     <Typography variant="h6" component="div">
                         Edit Member Details
                     </Typography>
-                    <IconButton
-                        onClick={() => setEditDialogOpen(false)}
-                        size="small"
-                        sx={{ 
-                            '&:hover': { 
-                                backgroundColor: '#e0e0e0'
-                            }
-                        }}
-                    >
-                        <CloseIcon />
-                    </IconButton>
+                    {!saving && (
+                        <IconButton
+                            onClick={() => setEditDialogOpen(false)}
+                            size="small"
+                            sx={{ 
+                                '&:hover': { 
+                                    backgroundColor: '#e0e0e0'
+                                }
+                            }}
+                        >
+                            <CloseIcon />
+                        </IconButton>
+                    )}
                 </DialogTitle>
                 <DialogContent sx={{ p: 3 }}>
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
                     {editedData && (
                         <Grid container spacing={3}>
                             <Grid item xs={12}>
@@ -232,6 +299,7 @@ const AdminPanel = () => {
                                                     onChange={(e) => handleInputChange('memberNumber', e.target.value)}
                                                     fullWidth
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                             <Grid item xs={6}>
@@ -241,6 +309,7 @@ const AdminPanel = () => {
                                                     onChange={(e) => handleInputChange('name', e.target.value)}
                                                     fullWidth
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                         </Grid>
@@ -261,6 +330,7 @@ const AdminPanel = () => {
                                                     fullWidth
                                                     type="number"
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -271,6 +341,7 @@ const AdminPanel = () => {
                                                     fullWidth
                                                     type="number"
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -281,6 +352,7 @@ const AdminPanel = () => {
                                                     fullWidth
                                                     type="number"
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                             <Grid item xs={6} md={3}>
@@ -291,6 +363,7 @@ const AdminPanel = () => {
                                                     fullWidth
                                                     type="number"
                                                     margin="normal"
+                                                    disabled={saving}
                                                 />
                                             </Grid>
                                         </Grid>
@@ -306,23 +379,25 @@ const AdminPanel = () => {
                         variant="outlined"
                         startIcon={<CloseIcon />}
                         sx={{ mr: 1 }}
+                        disabled={saving}
                     >
                         Cancel
                     </Button>
                     <Button 
                         onClick={handleSave}
                         variant="contained"
-                        startIcon={<SaveIcon />}
+                        startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
+                        disabled={saving}
                         sx={{ 
                             boxShadow: 2,
                             '&:hover': { boxShadow: 3 }
                         }}
                     >
-                        Save Changes
+                        {saving ? 'Saving...' : 'Save Changes'}
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Paper>
+        </Box>
     );
 };
 

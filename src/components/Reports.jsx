@@ -108,21 +108,25 @@ export default function Reports() {
         return (balance * 0.02);
     };
 
-    // Calculate totals
-    const totals = members.reduce((acc, member) => {
-        acc.loanAmount += member.loanAmount || 0;
-        acc.interest += member.interest || 0;
-        acc.installment += member.installment || 0;
-        acc.balance += member.balance || 0;
-        acc.nextMonthInterest += calculateNextMonthInterest(member.balance || 0);
-        return acc;
-    }, {
-        loanAmount: 0,
-        interest: 0,
-        installment: 0,
-        balance: 0,
-        nextMonthInterest: 0
-    });
+    const calculateTotals = (data) => {
+        return data.reduce((acc, member) => ({
+            totalLoanAmount: acc.totalLoanAmount + (Number(member.loanAmount) || 0),
+            totalInterest: acc.totalInterest + (Number(member.interest) || 0),
+            totalInstallment: acc.totalInstallment + (Number(member.installment) || 0),
+            totalBalance: acc.totalBalance + (Number(member.balance) || 0),
+            totalInitialDeposit: acc.totalInitialDeposit + (Number(member.initialDeposit) || 0),
+            totalMonthlySaving: acc.totalMonthlySaving + (Number(member.monthlySaving) || 0)
+        }), {
+            totalLoanAmount: 0,
+            totalInterest: 0,
+            totalInstallment: 0,
+            totalBalance: 0,
+            totalInitialDeposit: 0,
+            totalMonthlySaving: 0
+        });
+    };
+
+    const totals = calculateTotals(members);
 
     const generateDetailedMemberReport = async () => {
         try {
@@ -313,9 +317,9 @@ export default function Reports() {
             // Create CSV content starting with summary
             let csvContent = "Summary\n";
             csvContent += `Total Members,${members.length}\n`;
-            csvContent += `Total Loan Amount,${totals.loanAmount}\n`;
-            csvContent += `Total Interest,${totals.interest}\n`;
-            csvContent += `Outstanding Balance,${totals.balance}\n`;
+            csvContent += `Total Loan Amount,${totals.totalLoanAmount}\n`;
+            csvContent += `Total Interest,${totals.totalInterest}\n`;
+            csvContent += `Outstanding Balance,${totals.totalBalance}\n`;
             csvContent += `Next Month Total Interest,${totals.nextMonthInterest}\n\n`;
 
             // Add table headers
@@ -336,7 +340,7 @@ export default function Reports() {
             });
 
             // Add totals row
-            csvContent += `Totals,,${totals.loanAmount},${totals.interest},${totals.installment},${totals.balance},${totals.nextMonthInterest}\n`;
+            csvContent += `Totals,,${totals.totalLoanAmount},${totals.totalInterest},${totals.totalInstallment},${totals.totalBalance},${totals.nextMonthInterest}\n`;
 
             // Create blob and download
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -389,7 +393,7 @@ export default function Reports() {
                     <Card sx={{ bgcolor: 'success.light', color: 'white' }}>
                         <CardContent>
                             <Typography variant="h6">Total Balance</Typography>
-                            <Typography variant="h4">{formatCurrency(totals.balance)}</Typography>
+                            <Typography variant="h4">{formatCurrency(totals.totalBalance)}</Typography>
                         </CardContent>
                     </Card>
                 </Grid>
@@ -397,7 +401,23 @@ export default function Reports() {
                     <Card sx={{ bgcolor: 'warning.light', color: 'white' }}>
                         <CardContent>
                             <Typography variant="h6">Next Month Interest (24% p.a.)</Typography>
-                            <Typography variant="h4">{formatCurrency(totals.nextMonthInterest)}</Typography>
+                            <Typography variant="h4">{formatCurrency(calculateNextMonthInterest(totals.totalBalance))}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <Card sx={{ bgcolor: 'info.light', color: 'white' }}>
+                        <CardContent>
+                            <Typography variant="h6">Total Initial Deposit</Typography>
+                            <Typography variant="h4">{formatCurrency(totals.totalInitialDeposit)}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <Card sx={{ bgcolor: 'error.light', color: 'white' }}>
+                        <CardContent>
+                            <Typography variant="h6">Total Monthly Saving</Typography>
+                            <Typography variant="h4">{formatCurrency(totals.totalMonthlySaving)}</Typography>
                         </CardContent>
                     </Card>
                 </Grid>
@@ -410,6 +430,8 @@ export default function Reports() {
                         <TableRow>
                             <StyledTableCell>Member No.</StyledTableCell>
                             <StyledTableCell>Name</StyledTableCell>
+                            <StyledTableCell align="right">Initial Deposit</StyledTableCell>
+                            <StyledTableCell align="right">Monthly Saving</StyledTableCell>
                             <StyledTableCell align="right">Loan Amount</StyledTableCell>
                             <StyledTableCell align="right">Interest</StyledTableCell>
                             <StyledTableCell align="right">Installment</StyledTableCell>
@@ -424,6 +446,12 @@ export default function Reports() {
                                     {member.memberNumber.toString().padStart(3, '0')}
                                 </StyledTableCell>
                                 <StyledTableCell>{member.name}</StyledTableCell>
+                                <StyledTableCell align="right">
+                                    {formatCurrency(member.initialDeposit || 0)}
+                                </StyledTableCell>
+                                <StyledTableCell align="right">
+                                    {formatCurrency(member.monthlySaving || 0)}
+                                </StyledTableCell>
                                 <StyledTableCell align="right">
                                     {formatCurrency(member.loanAmount || 0)}
                                 </StyledTableCell>
@@ -447,19 +475,25 @@ export default function Reports() {
                                 Totals
                             </StyledTableCell>
                             <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                {formatCurrency(totals.loanAmount)}
+                                {formatCurrency(totals.totalInitialDeposit)}
                             </StyledTableCell>
                             <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                {formatCurrency(totals.interest)}
+                                {formatCurrency(totals.totalMonthlySaving)}
                             </StyledTableCell>
                             <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                {formatCurrency(totals.installment)}
+                                {formatCurrency(totals.totalLoanAmount)}
                             </StyledTableCell>
                             <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                {formatCurrency(totals.balance)}
+                                {formatCurrency(totals.totalInterest)}
                             </StyledTableCell>
                             <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                {formatCurrency(totals.nextMonthInterest)}
+                                {formatCurrency(totals.totalInstallment)}
+                            </StyledTableCell>
+                            <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
+                                {formatCurrency(totals.totalBalance)}
+                            </StyledTableCell>
+                            <StyledTableCell align="right" sx={{ fontWeight: 'bold' }}>
+                                {formatCurrency(calculateNextMonthInterest(totals.totalBalance))}
                             </StyledTableCell>
                         </StyledTableRow>
                     </TableBody>

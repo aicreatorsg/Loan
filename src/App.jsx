@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { Container, AppBar, Toolbar, Typography, Button, Box, CssBaseline } from '@mui/material';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import LoanForm from './components/LoanForm';
+import Home from './components/Home';
 import AdminPanel from './components/AdminPanel';
-import PaymentForm from './components/PaymentForm';
 import Members from './pages/Members';
 import PayInstallment from './components/PayInstallment';
+import RegisterMember from './components/RegisterMember';
 import Reports from './components/Reports';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
-import Navbar from './components/Navbar';
 import Login from './components/Login';
+import MemberManagement from './components/MemberManagement';
 
 const theme = createTheme({
     palette: {
@@ -24,7 +24,6 @@ const theme = createTheme({
 });
 
 function App() {
-    const [currentPage, setCurrentPage] = useState('members');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     const handleLogin = () => {
@@ -35,26 +34,25 @@ function App() {
         setIsAuthenticated(false);
     };
 
-    const renderPage = () => {
-        switch (currentPage) {
-            case 'members':
-                return <Members />;
-            case 'reports':
-                return <Reports />;
-            case 'pay':
-                return <PayInstallment />;
-            default:
-                return <Members />;
-        }
-    };
-
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
             <Router>
                 <AppBar position="static" sx={{ mb: 4 }}>
                     <Toolbar>
-                        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                        <Typography 
+                            variant="h6" 
+                            component={Link} 
+                            to="/"
+                            sx={{ 
+                                flexGrow: 1, 
+                                textDecoration: 'none',
+                                color: 'inherit',
+                                '&:hover': {
+                                    color: 'rgba(255, 255, 255, 0.8)'
+                                }
+                            }}
+                        >
                             Loan Management
                         </Typography>
                         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -77,10 +75,10 @@ function App() {
                             <Button 
                                 color="inherit" 
                                 component={Link} 
-                                to="/admin"
+                                to="/register-member"
                                 sx={{ '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' } }}
                             >
-                                Admin
+                                Register Member
                             </Button>
                             <Button 
                                 color="inherit" 
@@ -93,39 +91,45 @@ function App() {
                             <Button 
                                 color="inherit" 
                                 component={Link} 
+                                to="/member-management"
+                                sx={{ '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' } }}
+                            >
+                                Member Management
+                            </Button>
+                            <Button 
+                                color="inherit" 
+                                component={Link} 
                                 to="/reports"
                                 sx={{ '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' } }}
                             >
                                 Reports
                             </Button>
+                            {isAuthenticated && (
+                                <Button 
+                                    color="inherit"
+                                    onClick={handleLogout}
+                                    sx={{ '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' } }}
+                                >
+                                    Logout
+                                </Button>
+                            )}
                         </Box>
                     </Toolbar>
                 </AppBar>
 
-                <Container sx={{ mt: 4 }}>
+                <Container>
                     {!isAuthenticated ? (
                         <Login onLogin={handleLogin} />
                     ) : (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-                            <Navbar 
-                                currentPage={currentPage} 
-                                onPageChange={setCurrentPage}
-                                onLogout={handleLogout}
-                            />
-                            <Box component="main" sx={{ flexGrow: 1 }}>
-                                <Routes>
-                                    <Route path="/" element={<LoanForm />} />
-                                    <Route path="/members" element={renderPage()} />
-                                    <Route path="/admin" element={<AdminPanel />} />
-                                    <Route path="/pay-installment" element={<PayInstallment />} />
-                                    <Route path="/reports" element={<Reports />} />
-                                    <Route
-                                        path="/payment/:loanId"
-                                        element={<PaymentForm />}
-                                    />
-                                </Routes>
-                            </Box>
-                        </Box>
+                        <Routes>
+                            <Route path="/" element={<Home />} />
+                            <Route path="/members" element={<Members />} />
+                            <Route path="/register-member" element={<RegisterMember />} />
+                            <Route path="/admin" element={<AdminPanel />} />
+                            <Route path="/pay-installment" element={<PayInstallment />} />
+                            <Route path="/member-management" element={<MemberManagement />} />
+                            <Route path="/reports" element={<Reports />} />
+                        </Routes>
                     )}
                 </Container>
             </Router>
